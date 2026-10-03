@@ -1,4 +1,6 @@
-const API = '/api/items';
+// If the page is opened by double-click (file://) or via Live Server, talk to the Java server directly.
+const SERVER = location.port === '8080' ? '' : 'http://localhost:8080';
+const API = `${SERVER}/api/items`;
 const icons = { Electronics: '⌁', 'ID/Keys': '⌘', Books: '▤', Other: '◇' };
 const grid = document.querySelector('#itemsGrid');
 const search = document.querySelector('#searchInput');
@@ -76,7 +78,7 @@ let unread = 0;
 
 async function checkNotifications() {
   try {
-    const response = await fetch(`/api/notifications?since=${lastSeenId ?? 0}`);
+    const response = await fetch(`${SERVER}/api/notifications?since=${lastSeenId ?? 0}`);
     if (!response.ok) return;
     const data = await response.json();
 

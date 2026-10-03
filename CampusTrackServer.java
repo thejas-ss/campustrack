@@ -51,7 +51,8 @@ public class CampusTrackServer {
 
     static class ItemsHandler implements HttpHandler {
         public void handle(HttpExchange exchange) throws IOException {
-            if ("GET".equals(exchange.getRequestMethod())) send(exchange, 200, listJson(), "application/json");
+            if (preflight(exchange)) return;
+      if ("GET".equals(exchange.getRequestMethod())) send(exchange, 200, listJson(), "application/json");
             // The new id is sent back so the poster's own browser can skip notifying itself.
             else if ("POST".equals(exchange.getRequestMethod())) { Item item = createItem(readBody(exchange)); items.add(item); send(exchange, 201, "{\"message\":\"Item added\",\"id\":" + item.id + "}", "application/json"); }
             else send(exchange, 405, "Method not allowed", "text/plain");
@@ -59,7 +60,8 @@ public class CampusTrackServer {
     }
     static class ClaimHandler implements HttpHandler {
         public void handle(HttpExchange exchange) throws IOException {
-            if (!"POST".equals(exchange.getRequestMethod())) { send(exchange, 405, "Method not allowed", "text/plain"); return; }
+            if (preflight(exchange)) return;
+      if (!"POST".equals(exchange.getRequestMethod())) { send(exchange, 405, "Method not allowed", "text/plain"); return; }
             int id = Integer.parseInt(value(readBody(exchange), "id"));
             synchronized (items) { for (Item item : items) if (item.id == id) { item.status = "CLAIMED"; send(exchange, 200, "{\"message\":\"Item claimed\"}", "application/json"); return; } }
             send(exchange, 404, "{\"error\":\"Item not found\"}", "application/json");
@@ -76,7 +78,8 @@ public class CampusTrackServer {
      */
     static class NotificationHandler implements HttpHandler {
         public void handle(HttpExchange exchange) throws IOException {
-            if (!"GET".equals(exchange.getRequestMethod())) { send(exchange, 405, "Method not allowed", "text/plain"); return; }
+            if (preflight(exchange)) return;
+      if (!"GET".equals(exchange.getRequestMethod())) { send(exchange, 405, "Method not allowed", "text/plain"); return; }
 
             // Read the query string manually, e.g. "since=5". Missing/invalid -> 0 (send everything).
             int since = 0;
@@ -127,5 +130,16 @@ public class CampusTrackServer {
     private static String value(String json, String key) { Matcher m = Pattern.compile("\\\"" + Pattern.quote(key) + "\\\"\\s*:\\s*(?:\\\"([^\\\"]*)\\\"|(\\d+))").matcher(json); return m.find() ? (m.group(1) != null ? m.group(1) : m.group(2)) : ""; }
     private static String readBody(HttpExchange e) throws IOException { return new String(e.getRequestBody().readAllBytes(), StandardCharsets.UTF_8); }
     private static String json(String s) { return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n"); }
-    private static void send(HttpExchange e, int code, String body, String type) throws IOException { byte[] data=body.getBytes(StandardCharsets.UTF_8); e.getResponseHeaders().set("Content-Type", type+"; charset=utf-8"); e.getResponseHeaders().set("Access-Control-Allow-Origin", "*"); e.sendResponseHeaders(code,data.length); try(OutputStream out=e.getResponseBody()){out.write(data);} }
+    // CORS headers let a page opened from another origin (file:// or Live Server) call this API.
+  private static void cors(HttpExchange e) {
+    e.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+    e.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    e.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
+  }
+  // Browsers send an OPTIONS "preflight" before a JSON POST. Answer it with 204 No Content.
+  private static boolean preflight(HttpExchange e) throws IOException {
+    if (!"OPTIONS".equals(e.getRequestMethod())) return false;
+    cors(e); e.sendResponseHeaders(204, -1); e.close(); return true;
+  }
+  private static void send(HttpExchange e, int code, String body, String type) throws IOException { byte[] data=body.getBytes(StandardCharsets.UTF_8); e.getResponseHeaders().set("Content-Type", type+"; charset=utf-8"); cors(e); e.sendResponseHeaders(code,data.length); try(OutputStream out=e.getResponseBody()){out.write(data);} }
 }
